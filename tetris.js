@@ -309,7 +309,7 @@ clearLines = function() {
 			}
 		}
 		if(emptyFound === true) {
-      break;
+      continue;
 		}
 
     // remove squares at the cleared line
