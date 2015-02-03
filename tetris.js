@@ -30,15 +30,16 @@ Piece = {
 };
 
 makePiece = function(x, y, type) {
-	var rowNum, colNum;
+	var squares, rowNum, colNum;
 	var newPiece = Object.create(Piece);
 
 	// Otherwise all pieces share the same Piece.squares array. We want each piece to have it's own array of squares.
 	newPiece.squares = [];
 
-	for(rowNum = 0; rowNum < rotations[type][0].length; rowNum++) {
-		for(colNum = 0; colNum < rotations[type][0][rowNum].length; colNum++) {
-			if(rotations[type][0][rowNum][colNum] === type) {
+  squares = rotations[type][0];
+	for(rowNum = 0; rowNum < squares.length; rowNum++) {
+		for(colNum = 0; colNum < squares[rowNum].length; colNum++) {
+			if(squares[rowNum][colNum] === type) {
 				newPiece.squares.push(makeSquare(x + colNum, y + rowNum, pieceColors[type]));	
 			}
 		}
@@ -211,6 +212,14 @@ randomPieceType = function() {
 	var maxTries = 6;
 	return function() {
 		var i, piece, type, rowNum, colNum;
+
+    // initial randomizer conditions
+    if(history.length === 0) {
+      history = ["Z", "S", "Z", "S"];
+			type = ["I", "J", "L", "T"][Math.floor(Math.random() * 4)];
+      history.push(type);
+      return type;
+    }
 
 		for(i = 0; i < maxTries; i++) {
 			type = pieces[Math.floor(Math.random() * pieces.length)];
