@@ -61,6 +61,7 @@ canvas = null;
 context = null;
 cellWidth = -1;
 cellHeight = -1;
+pieceTypes = ["I", "J", "L", "O", "T", "S", "Z"];
 pieceColors = {
 	"X": "#000000",
 	"I": "#FF0000",
@@ -171,6 +172,13 @@ rotations = {
 	DOWN: 40,
 	RIGHT: 39,
 	ENTER: 13,
+  I: 73,
+  J: 74,
+  L: 76,
+  O: 79,
+  T: 84,
+  S: 83,
+  Z: 90,
 
 	keyDown: function(ev) {
 		keys._pressed[ev.keyCode] = true;
@@ -206,7 +214,6 @@ isSquarePlacedAt = function(x, y) {
 };
 
 randomPieceType = function() {
-	var pieces = ["I", "J", "L", "O", "T", "S", "Z"];
 	var history = [];
 	var maxHistory = 4;
 	var maxTries = 6;
@@ -222,7 +229,7 @@ randomPieceType = function() {
     }
 
 		for(i = 0; i < maxTries; i++) {
-			type = pieces[Math.floor(Math.random() * pieces.length)];
+			type = pieceTypes[Math.floor(Math.random() * pieceTypes.length)];
 			if(history.indexOf(type) === -1) {
 				break;
 			}
@@ -239,8 +246,8 @@ randomPieceType = function() {
  * Action functions
  */
 
-spawnPiece = function() {
-	currentPiece = makePiece(Math.round(numCols / 2) - 2, numRows - 4, randomPieceType());
+spawnPiece = function(forceType) {
+	currentPiece = makePiece(Math.round(numCols / 2) - 2, numRows - 4, forceType || randomPieceType());
 };
 
 lowerPiece = function() {
@@ -290,24 +297,27 @@ clearLines = function() {
 			if(isSquarePlacedAt(colNum, rowNum) === false) {
 				// square not yet cleared
 				emptyFound = true;
+        break;
 			}
 		}
-		if(emptyFound === false) {
-			// remove squares at the cleared line
-			placedSquares = placedSquares.filter(function(square) {
-   				return square.y !== rowNum;
-			});
-			// move squares from above the cleared line down
-			for(i = 0; i < placedSquares.length; i++) {
-				if(placedSquares[i].y > rowNum) {
-					// needs to be else if otherwise 
-					placedSquares[i].y--;
-				}
-			}
-			// need to check this i value again because the row above it got pushed into this one
-			// TODO: see if this can better be refactored
-			rowNum--;
+		if(emptyFound === true) {
+      break;
 		}
+
+    // remove squares at the cleared line
+    placedSquares = placedSquares.filter(function(square) {
+        return square.y !== rowNum;
+    });
+    // move squares from above the cleared line down
+    for(i = 0; i < placedSquares.length; i++) {
+      if(placedSquares[i].y > rowNum) {
+        // needs to be else if otherwise 
+        placedSquares[i].y--;
+      }
+    }
+    // need to check this i value again because the row above it got pushed into this one
+    // TODO: see if this can better be refactored
+    rowNum--;
 	}
 };
 
@@ -335,6 +345,13 @@ update = function() {
 			placed = lowerPiece();
 		}
 	}
+
+  // debug tools
+  pieceTypes.forEach(function(type) {
+    if(keys.isPressed(keys[type])) {
+      spawnPiece(type);
+    }
+  })
 
 	// gravity
 	//placed = lowerPiece();
