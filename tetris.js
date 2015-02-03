@@ -181,16 +181,24 @@ rotations = {
   Z: 90,
 
 	keyDown: function(ev) {
-		keys._pressed[ev.keyCode] = true;
-	},
+    keys._pressed[ev.keyCode] = keys._pressed[ev.keyCode] || 1;
+  },
 
 	keyUp: function(ev) {
-		keys._pressed[ev.keyCode] = false;
+		keys._pressed[ev.keyCode] = 0;
 	},
 
 	isPressed: function(keyCode) {
 		return keys._pressed[keyCode] || false;
 	},
+
+  incrementAutorepeat: function() {
+    for(var keyCode in keys._pressed) {
+      if (keys.isPressed(keyCode)) {
+        keys._pressed[keyCode]++;
+      }
+    };
+  },
 
 	clearInputs: function() {
 		keys._pressed = {};
@@ -328,19 +336,19 @@ update = function() {
 		placed = lowerPiece();
 	}
 	
-	if(keys.isPressed(keys.UP)) {
+	if(keys.isPressed(keys.UP) === 1) {
 		rotatePiece();
 	}
 
-	if(keys.isPressed(keys.RIGHT)) {
+	if(keys.isPressed(keys.RIGHT) === 1 || keys.isPressed(keys.RIGHT) >= 14) {
 		shiftPiece(1);
 	}
 
-	if(keys.isPressed(keys.LEFT)) {
+	if(keys.isPressed(keys.LEFT) === 1 || keys.isPressed(keys.LEFT) >= 14) {
 		shiftPiece(-1);
 	}
 
-	if(keys.isPressed(keys.SPACE)) {
+	if(keys.isPressed(keys.SPACE) === 1) {
 		while(placed === false) {
 			placed = lowerPiece();
 		}
@@ -352,6 +360,8 @@ update = function() {
       spawnPiece(type);
     }
   })
+
+  keys.incrementAutorepeat()
 
 	// gravity
 	//placed = lowerPiece();
