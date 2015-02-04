@@ -30,15 +30,16 @@ Piece = {
 };
 
 makePiece = function(x, y, type) {
-	var rowNum, colNum;
+	var squares, rowNum, colNum;
 	var newPiece = Object.create(Piece);
 
 	// Otherwise all pieces share the same Piece.squares array. We want each piece to have it's own array of squares.
 	newPiece.squares = [];
 
-	for(rowNum = 0; rowNum < rotations[type][0].length; rowNum++) {
-		for(colNum = 0; colNum < rotations[type][0][rowNum].length; colNum++) {
-			if(rotations[type][0][rowNum][colNum] === type) {
+  squares = rotations[type][0];
+	for(rowNum = 0; rowNum < squares.length; rowNum++) {
+		for(colNum = 0; colNum < squares[rowNum].length; colNum++) {
+			if(squares[rowNum][colNum] === type) {
 				newPiece.squares.push(makeSquare(x + colNum, y + rowNum, pieceColors[type]));	
 			}
 		}
@@ -60,6 +61,7 @@ canvas = null;
 context = null;
 cellWidth = -1;
 cellHeight = -1;
+pieceTypes = ["I", "J", "L", "O", "T", "S", "Z"];
 pieceColors = {
 	"X": "#000000",
 	"I": "#FF0000",
@@ -170,18 +172,33 @@ rotations = {
 	DOWN: 40,
 	RIGHT: 39,
 	ENTER: 13,
+  I: 73,
+  J: 74,
+  L: 76,
+  O: 79,
+  T: 84,
+  S: 83,
+  Z: 90,
 
 	keyDown: function(ev) {
-		keys._pressed[ev.keyCode] = true;
-	},
+    keys._pressed[ev.keyCode] = keys._pressed[ev.keyCode] || 1;
+  },
 
 	keyUp: function(ev) {
-		keys._pressed[ev.keyCode] = false;
+		keys._pressed[ev.keyCode] = 0;
 	},
 
 	isPressed: function(keyCode) {
 		return keys._pressed[keyCode] || false;
 	},
+
+  incrementAutorepeat: function() {
+    for(var keyCode in keys._pressed) {
+      if (keys.isPressed(keyCode)) {
+        keys._pressed[keyCode]++;
+      }
+    };
+  },
 
 	clearInputs: function() {
 		keys._pressed = {};
@@ -205,15 +222,22 @@ isSquarePlacedAt = function(x, y) {
 };
 
 randomPieceType = function() {
-	var pieces = ["I", "J", "L", "O", "T", "S", "Z"];
 	var history = [];
 	var maxHistory = 4;
 	var maxTries = 6;
 	return function() {
 		var i, piece, type, rowNum, colNum;
 
+    // initial randomizer conditions
+    if(history.length === 0) {
+      history = ["Z", "S", "Z", "S"];
+			type = ["I", "J", "L", "T"][Math.floor(Math.random() * 4)];
+      history.push(type);
+      return type;
+    }
+
 		for(i = 0; i < maxTries; i++) {
-			type = pieces[Math.floor(Math.random() * pieces.length)];
+			type = pieceTypes[Math.floor(Math.random() * pieceTypes.length)];
 			if(history.indexOf(type) === -1) {
 				break;
 			}
@@ -230,8 +254,8 @@ randomPieceType = function() {
  * Action functions
  */
 
-spawnPiece = function() {
-	currentPiece = makePiece(Math.round(numCols / 2) - 2, numRows - 4, randomPieceType());
+spawnPiece = function(forceType) {
+	currentPiece = makePiece(Math.round(numCols / 2) - 2, numRows - 4, forceType || randomPieceType());
 };
 
 lowerPiece = function() {
@@ -281,24 +305,27 @@ clearLines = function() {
 			if(isSquarePlacedAt(colNum, rowNum) === false) {
 				// square not yet cleared
 				emptyFound = true;
+        break;
 			}
 		}
-		if(emptyFound === false) {
-			// remove squares at the cleared line
-			placedSquares = placedSquares.filter(function(square) {
-   				return square.y !== rowNum;
-			});
-			// move squares from above the cleared line down
-			for(i = 0; i < placedSquares.length; i++) {
-				if(placedSquares[i].y > rowNum) {
-					// needs to be else if otherwise 
-					placedSquares[i].y--;
-				}
-			}
-			// need to check this i value again because the row above it got pushed into this one
-			// TODO: see if this can better be refactored
-			rowNum--;
+		if(emptyFound === true) {
+      continue;
 		}
+
+    // remove squares at the cleared line
+    placedSquares = placedSquares.filter(function(square) {
+        return square.y !== rowNum;
+    });
+    // move squares from above the cleared line down
+    for(i = 0; i < placedSquares.length; i++) {
+      if(placedSquares[i].y > rowNum) {
+        // needs to be else if otherwise 
+        placedSquares[i].y--;
+      }
+    }
+    // need to check this i value again because the row above it got pushed into this one
+    // TODO: see if this can better be refactored
+    rowNum--;
 	}
 };
 
@@ -309,23 +336,32 @@ update = function() {
 		placed = lowerPiece();
 	}
 	
-	if(keys.isPressed(keys.UP)) {
+	if(keys.isPressed(keys.UP) === 1) {
 		rotatePiece();
 	}
 
-	if(keys.isPressed(keys.RIGHT)) {
+	if(keys.isPressed(keys.RIGHT) === 1 || keys.isPressed(keys.RIGHT) >= 14) {
 		shiftPiece(1);
 	}
 
-	if(keys.isPressed(keys.LEFT)) {
+	if(keys.isPressed(keys.LEFT) === 1 || keys.isPressed(keys.LEFT) >= 14) {
 		shiftPiece(-1);
 	}
 
-	if(keys.isPressed(keys.SPACE)) {
+	if(keys.isPressed(keys.SPACE) === 1) {
 		while(placed === false) {
 			placed = lowerPiece();
 		}
 	}
+
+  // debug tools
+  pieceTypes.forEach(function(type) {
+    if(keys.isPressed(keys[type])) {
+      spawnPiece(type);
+    }
+  })
+
+  keys.incrementAutorepeat()
 
 	// gravity
 	//placed = lowerPiece();
