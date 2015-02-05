@@ -66,7 +66,8 @@ makePiece = function(x, y, type, rotation) {
  * Globals
  * TODO: Probably should group these nicely or at least move them out of the global namespace.
  */
-
+framesPerGravity = 15;
+framesSinceGravity = 0;
 autoRepeatDelay = 14;
 currentPiece = null;
 placedSquares = [];
@@ -316,7 +317,7 @@ rotatePiece = function(rotationAmount) {
 	// see if the destination rotation is occupied
 	testPiece = makePiece(currentPiece.x, currentPiece.y, currentPiece.type, newRotation);
 	for(i = 0; i < testPiece.squares.length; i++) {
-		if(isSquarePlacedAt(testPiece.squares[i].x, testPiece.squares[i].y)) {
+		if(testPiece.squares[i].x < 0 || testPiece.squares[i].x >= numCols || testPiece.squares[i].y < 0 || isSquarePlacedAt(testPiece.squares[i].x, testPiece.squares[i].y)) {
 			return;
 		}
 	}
@@ -418,8 +419,17 @@ update = function() {
 		}
 	});
 
+
 	// gravity
-	//placed = lowerPiece();
+	// TODO: Better gravity code.
+	if(placed === false) {
+		if(framesSinceGravity === framesPerGravity) {
+			placed = lowerPiece();
+			framesSinceGravity = 0;
+		} else {
+			framesSinceGravity++;
+		}
+	}
 
 	if(placed === true) {
 		// need to add currentPiece's squares to placedSquares somewhere around this time. Doesn't make sense to do it in clearLines(),
@@ -463,7 +473,7 @@ init = function() {
 	canvas = document.createElement("canvas");
 	context = canvas.getContext("2d");
 	canvas.width = 480;
-	canvas.height = 720;
+	canvas.height = 960;
 	canvas.style.backgroundColor = "#000000";
 	document.body.appendChild(canvas);
 
