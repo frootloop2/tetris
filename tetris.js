@@ -1,6 +1,7 @@
 /*
  * generic function to make new objects that inherit from another object o
  */
+
 Object.create = function object(o) {
 	function F() {}
 	F.prototype = o;
@@ -8,39 +9,52 @@ Object.create = function object(o) {
 };
 
 /*
- * Prototypes
+ * Prototypes and maker functions
  */
 
 Square = {
 	x: 0,
 	y: 0,
+	// Maybe this should be a type instead of a color, and have the render code choose the color.
 	color: "#FFFFFF"
 };
 
 makeSquare = function(x, y, color) {
-	var newSquare = Object.create(Square);
+	var newSquare;
+	
+	newSquare = Object.create(Square);
+	
 	newSquare.x = x;
 	newSquare.y = y;
 	newSquare.color = color;
+
 	return newSquare;
 };
 
 Piece = {
-	squares: []
+	squares: [],
+	type: "X",
+	rotation: 0,
+	x: 0,
+	y: 0
 };
 
-makePiece = function(x, y, type) {
-	var squares, rowNum, colNum;
-	var newPiece = Object.create(Piece);
-
+makePiece = function(x, y, type, rotation) {
+	var squares, rowNum, colNum, newPiece;
+	
+	newPiece = Object.create(Piece);
+	newPiece.x = x;
+	newPiece.y = y;
+	newPiece.type = type;
+	newPiece.rotation = rotation;
 	// Otherwise all pieces share the same Piece.squares array. We want each piece to have it's own array of squares.
 	newPiece.squares = [];
-
-  squares = rotations[type][0];
+	
+	squares = rotations[newPiece.type][newPiece.rotation];
 	for(rowNum = 0; rowNum < squares.length; rowNum++) {
 		for(colNum = 0; colNum < squares[rowNum].length; colNum++) {
-			if(squares[rowNum][colNum] === type) {
-				newPiece.squares.push(makeSquare(x + colNum, y + rowNum, pieceColors[type]));	
+			if(squares[rowNum][colNum] === newPiece.type) {
+				newPiece.squares.push(makeSquare(newPiece.x + colNum, newPiece.y + rowNum, pieceColors[newPiece.type]));
 			}
 		}
 	}
@@ -50,11 +64,13 @@ makePiece = function(x, y, type) {
 
 /*
  * Globals
+ * TODO: Probably should group these nicely or at least move them out of the global namespace.
  */
 
+autoRepeatDelay = 14;
 currentPiece = null;
 placedSquares = [];
-numRows =  20;
+numRows = 20;
 numCols = 10;
 fps = 30;
 canvas = null;
@@ -64,15 +80,17 @@ cellHeight = -1;
 pieceTypes = ["I", "J", "L", "O", "T", "S", "Z"];
 pieceColors = {
 	"X": "#000000",
-	"I": "#FF0000",
-	"J": "#00FF00",
-	"L": "#0000FF",
-	"O": "#FF00FF",
-	"T": "#FFFF00",
-	"S": "#00FFFF",
-	"Z": "#FFFFFF"
+	"I": "#00FFFF",
+	"J": "#0000FF",
+	"L": "#FF8800",
+	"O": "#FFFF00",
+	"T": "#8800FF",
+	"S": "#00FF00",
+	"Z": "#FF0000"
 };
 rotations = {
+	// bitmaps for each piece in it's various rotations. bitmaps are not all the same size.
+	// maybe they shouldn't be "X"s and piece types. Could do a 0, 1 bitmap instead and/or have some enum for the pieces.
 	"I": [
 		 [["X", "X", "X", "X"],
 		  ["X", "X", "X", "X"],
@@ -163,45 +181,50 @@ rotations = {
  * Input object
  */
 
- keys = {
+keys = {
 	_pressed: {},
 
-	SPACE: 32,
-	UP: 38,
-	LEFT: 37,
-	DOWN: 40,
-	RIGHT: 39,
+	// keyCodes
 	ENTER: 13,
-  I: 73,
-  J: 74,
-  L: 76,
-  O: 79,
-  T: 84,
-  S: 83,
-  Z: 90,
+	SPACE: 32,
+
+	LEFT:  37,
+	UP:    38,
+	RIGHT: 39,
+	DOWN:  40,
+	
+	I:     73,
+	J:     74,
+	L:     76,
+	O:     79,
+	T:     84,
+	S:     83,
+	Z:     90,
 
 	keyDown: function(ev) {
-    keys._pressed[ev.keyCode] = keys._pressed[ev.keyCode] || 1;
-  },
+		// OS generally has it's own repeating key stuff which will retrigger keyDown events.This means a keyDown event can be triggered even though
+		// the key is still held so we can't necessarily overwrite the value. This code basically ignores repeated keyDowns without keyUps in between.
+		// Setting it to 0 means the incrementPressedKeys will pick it up. If we set it to 1 instead then the incrementPressedKeys will additionally
+		// increment and it will 'skip' from 0/undefined straight to 2 as far as update() is concerned.
+		// One solution is to run incrementPressedKeys
+		// after update() is called but that's kinda weird too. Really we'd like to call incrementPressedKeys before handling the keyDown event
+		// but I don't think we control that ordering.
+		keys._pressed[ev.keyCode] = keys._pressed[ev.keyCode] || 0;
+	},
 
 	keyUp: function(ev) {
-		keys._pressed[ev.keyCode] = 0;
+		delete keys._pressed[ev.keyCode];
 	},
 
-	isPressed: function(keyCode) {
-		return keys._pressed[keyCode] || false;
+	framesPressed: function(keyCode) {
+		return keys._pressed[keyCode] || 0;
 	},
 
-  incrementAutorepeat: function() {
-    for(var keyCode in keys._pressed) {
-      if (keys.isPressed(keyCode)) {
-        keys._pressed[keyCode]++;
-      }
-    };
-  },
-
-	clearInputs: function() {
-		keys._pressed = {};
+	incrementPressedKeys: function() {
+		var keyCode;
+		for(keyCode in keys._pressed) {
+			keys._pressed[keyCode]++;
+		};
 	}
 };
 window.addEventListener("keydown", keys.keyDown);
@@ -215,36 +238,34 @@ isSquarePlacedAt = function(x, y) {
 	var i;
 	for(i = 0; i < placedSquares.length; i++) {
 		if(placedSquares[i].x === x && placedSquares[i].y === y) {
-			return placedSquares[i];
+			return true;
 		}
 	}
 	return false;
 };
 
 randomPieceType = function() {
+	// TGM randomizer algorithm
 	var history = [];
-	var maxHistory = 4;
 	var maxTries = 6;
 	return function() {
-		var i, piece, type, rowNum, colNum;
+		var i, type;
 
-    // initial randomizer conditions
-    if(history.length === 0) {
-      history = ["Z", "S", "Z", "S"];
+		if(history.length === 0) {
+			// initial randomizer conditions
+			history = ["Z", "S", "Z", "S"];
+			// NEVER let the first piece be OSZ so it doesn't run the regular algorithm. This rule is also why we don't just initialize history in the first place.
 			type = ["I", "J", "L", "T"][Math.floor(Math.random() * 4)];
-      history.push(type);
-      return type;
-    }
-
-		for(i = 0; i < maxTries; i++) {
-			type = pieceTypes[Math.floor(Math.random() * pieceTypes.length)];
-			if(history.indexOf(type) === -1) {
-				break;
+		} else {
+			for(i = 0; i < maxTries; i++) {
+				type = pieceTypes[Math.floor(Math.random() * pieceTypes.length)];
+				if(history.indexOf(type) === -1) {
+					break;
+				}
 			}
 		}
-		if(history.length >= maxHistory) {
-			history.shift();
-		}
+
+		history.shift();
 		history.push(type);
 		return type;
 	};
@@ -255,13 +276,21 @@ randomPieceType = function() {
  */
 
 spawnPiece = function(forceType) {
-	currentPiece = makePiece(Math.round(numCols / 2) - 2, numRows - 4, forceType || randomPieceType());
+	var x, y, type, rotation;
+	
+	x = Math.round(numCols / 2) - 2;
+	y = numRows - 3;
+	type = forceType || randomPieceType();
+	rotation = 0;
+	
+	// TODO: Accurately position spawned piece. Maybe do this inside makePiece? Currently just a rough approximation.
+	currentPiece = makePiece(x, y, type, rotation);
 };
 
+// returns whether or not the piece has been placed.
 lowerPiece = function() {
-	// returns whether or not the piece has been placed.
-
 	var i;
+
 	// see if any square below the current piece is occupied or is the ground
 	for(i = 0; i < currentPiece.squares.length; i++) {
 		if(currentPiece.squares[i].y === 0 || isSquarePlacedAt(currentPiece.squares[i].x, currentPiece.squares[i].y - 1)) {
@@ -270,19 +299,35 @@ lowerPiece = function() {
 	}
 
 	// square can be lowered
+	// TODO: Ideally we would just call currentPiece.y-- and code elsewhere will figure out that the squares need to be lowered.
 	for(i = 0; i < currentPiece.squares.length; i++) {
 		currentPiece.squares[i].y--;
 	}
+	currentPiece.y--;
 
 	return false;
 };
 
 rotatePiece = function(rotationAmount) {
+	var i, newRotation, testPiece;
 
+	newRotation = (currentPiece.rotation + rotationAmount) % rotations[currentPiece.type].length;
+
+	// see if the destination rotation is occupied
+	testPiece = makePiece(currentPiece.x, currentPiece.y, currentPiece.type, newRotation);
+	for(i = 0; i < testPiece.squares.length; i++) {
+		if(isSquarePlacedAt(testPiece.squares[i].x, testPiece.squares[i].y)) {
+			return;
+		}
+	}
+
+	// square can be rotated
+	currentPiece = testPiece;
 };
 
 shiftPiece = function(xDelta) {
 	var i;
+
 	// see if any square next to the current piece is occupied or is the wall
 	for(i = 0; i < currentPiece.squares.length; i++) {
 		if(currentPiece.squares[i].x + xDelta < 0 || currentPiece.squares[i].x + xDelta >= numCols || isSquarePlacedAt(currentPiece.squares[i].x + xDelta, currentPiece.squares[i].y)) {
@@ -291,9 +336,11 @@ shiftPiece = function(xDelta) {
 	}
 
 	// square can be shifted
+	// TODO: Ideally we would just call currentPiece.x += xDelta; and code elsewhere will figure out that the squares need to be shifted.
 	for(i = 0; i < currentPiece.squares.length; i++) {
 		currentPiece.squares[i].x += xDelta;
 	}
+	currentPiece.x += xDelta;
 };
 
 clearLines = function() {
@@ -305,63 +352,71 @@ clearLines = function() {
 			if(isSquarePlacedAt(colNum, rowNum) === false) {
 				// square not yet cleared
 				emptyFound = true;
-        break;
+				break;
 			}
 		}
+
+		// is there a better way to do this? We want to continue to the next row as soon as we find a piece but we're inside
+		// an inner for loop so we break, catch the break via emptyFound and then continue.
 		if(emptyFound === true) {
-      continue;
+			continue;
 		}
 
-    // remove squares at the cleared line
-    placedSquares = placedSquares.filter(function(square) {
-        return square.y !== rowNum;
-    });
-    // move squares from above the cleared line down
-    for(i = 0; i < placedSquares.length; i++) {
-      if(placedSquares[i].y > rowNum) {
-        // needs to be else if otherwise 
-        placedSquares[i].y--;
-      }
-    }
-    // need to check this i value again because the row above it got pushed into this one
-    // TODO: see if this can better be refactored
-    rowNum--;
+		// remove squares at the cleared line
+		placedSquares = placedSquares.filter(function(square) {
+			return square.y !== rowNum;
+		});
+		// move squares from above the cleared line down
+		for(i = 0; i < placedSquares.length; i++) {
+			if(placedSquares[i].y > rowNum) {
+				// needs to be else if otherwise 
+				placedSquares[i].y--;
+			}
+		}
+		// need to check this i value again because the row above it got pushed into this one
+		// TODO: see if this can better be refactored. Manually adjusting the loop counter is kinda gross.
+		rowNum--;
 	}
 };
 
 update = function() {
-	var placed = false;
+	var placed;
+
+	placed = false;
+
 	// get input
-	if(keys.isPressed(keys.DOWN)) {
-		placed = lowerPiece();
-	}
 	
-	if(keys.isPressed(keys.UP) === 1) {
-		rotatePiece();
+	// only triggering when pressed for just 1 frame is equivalent to being a keydown event.
+	if(keys.framesPressed(keys.UP) === 1) {
+		rotatePiece(1);
 	}
 
-	if(keys.isPressed(keys.RIGHT) === 1 || keys.isPressed(keys.RIGHT) >= 14) {
+	// If the key has been held for a while, trigger additional movement every frame the key continues to be held calledDelayed Auto Shift (DAS).
+	if(keys.framesPressed(keys.RIGHT) === 1 || keys.framesPressed(keys.RIGHT) >= autoRepeatDelay) {
 		shiftPiece(1);
 	}
-
-	if(keys.isPressed(keys.LEFT) === 1 || keys.isPressed(keys.LEFT) >= 14) {
+	if(keys.framesPressed(keys.LEFT) === 1 || keys.framesPressed(keys.LEFT) >= autoRepeatDelay) {
 		shiftPiece(-1);
 	}
 
-	if(keys.isPressed(keys.SPACE) === 1) {
+	// we want to be able to hold down to lower the piece quickly so we don't test for just === 1
+	// kind of like DAS but we don't want to wait.
+	if(keys.framesPressed(keys.DOWN) > 0) {
+		placed = lowerPiece();
+	}
+
+	if(keys.framesPressed(keys.SPACE) === 1) {
 		while(placed === false) {
 			placed = lowerPiece();
 		}
 	}
 
-  // debug tools
-  pieceTypes.forEach(function(type) {
-    if(keys.isPressed(keys[type])) {
-      spawnPiece(type);
-    }
-  })
-
-  keys.incrementAutorepeat()
+	// debug tools
+	pieceTypes.forEach(function(type) {
+		if(keys.framesPressed(keys[type])) {
+			spawnPiece(type);
+		}
+	});
 
 	// gravity
 	//placed = lowerPiece();
@@ -396,6 +451,8 @@ render = function() {
  */
 
 tick = function() {
+	// TODO: this might not go here but it kinda makes more sense than in update().
+	keys.incrementPressedKeys();
 	update();
 	render();
 };
