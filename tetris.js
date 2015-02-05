@@ -186,7 +186,6 @@ keys = {
 	_pressed: {},
 
 	// keyCodes
-	ENTER: 13,
 	SPACE: 32,
 
 	LEFT:  37,
@@ -201,6 +200,8 @@ keys = {
 	T:     84,
 	S:     83,
 	Z:     90,
+
+	X:     88,
 
 	keyDown: function(ev) {
 		// OS generally has it's own repeating key stuff which will retrigger keyDown events.This means a keyDown event can be triggered even though
@@ -312,9 +313,11 @@ lowerPiece = function() {
 rotatePiece = function(rotationAmount) {
 	var i, newRotation, testPiece;
 
-	newRotation = (currentPiece.rotation + rotationAmount) % rotations[currentPiece.type].length;
+	// we want the rotation to be (0, number of possible rotations for this piece] but since we allow negative rotation we need to add the number of possible rotations before
+	// applying the modulus because -3 % 10 === -3 when we want -3 % 10 to be 7.
+	newRotation = (rotations[currentPiece.type].length + (currentPiece.rotation + rotationAmount)) % rotations[currentPiece.type].length;
 
-	// see if the destination rotation is occupied
+	// see if the destination rotation is occupied or out of bounds
 	testPiece = makePiece(currentPiece.x, currentPiece.y, currentPiece.type, newRotation);
 	for(i = 0; i < testPiece.squares.length; i++) {
 		if(testPiece.squares[i].x < 0 || testPiece.squares[i].x >= numCols || testPiece.squares[i].y < 0 || isSquarePlacedAt(testPiece.squares[i].x, testPiece.squares[i].y)) {
@@ -386,10 +389,15 @@ update = function() {
 	placed = false;
 
 	// get input
-	
+	// TODO: need to determine the appropriate order for applying inputs.
+	// TODO: pick more ideal keys for controls.
+
 	// only triggering when pressed for just 1 frame is equivalent to being a keydown event.
 	if(keys.framesPressed(keys.UP) === 1) {
 		rotatePiece(1);
+	}
+	if(keys.framesPressed(keys.X) === 1) {
+		rotatePiece(-1);
 	}
 
 	// If the key has been held for a while, trigger additional movement every frame the key continues to be held calledDelayed Auto Shift (DAS).
