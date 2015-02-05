@@ -70,6 +70,8 @@ framesPerGravity = 15;
 framesSinceGravity = 0;
 autoRepeatDelay = 14;
 currentPiece = null;
+ghostPiece = null;
+showGhostPiece = false;
 placedSquares = [];
 numRows = 20;
 numCols = 10;
@@ -89,6 +91,16 @@ pieceColors = {
 	"S": "#00FF00",
 	"Z": "#FF0000"
 };
+ghostColors = {
+	"X": "#000000",
+	"I": "#004444",
+	"J": "#000044",
+	"L": "#442200",
+	"O": "#444400",
+	"T": "#220044",
+	"S": "#004400",
+	"Z": "#440000"
+}
 rotations = {
 	// bitmaps for each piece in it's various rotations. bitmaps are not all the same size.
 	// maybe they shouldn't be "X"s and piece types. Could do a 0, 1 bitmap instead and/or have some enum for the pieces.
@@ -201,6 +213,7 @@ keys = {
 	S:     83,
 	Z:     90,
 
+	R:     82,
 	X:     88,
 
 	keyDown: function(ev) {
@@ -235,6 +248,15 @@ window.addEventListener("keyup", keys.keyUp);
 /*
  * Game Logic functions
  */
+
+isValidPiece = function(piece) {
+	for(i = 0; i < piece.squares.length; i++) {
+		if(piece.squares[i].x < 0 || piece.squares[i].x >= numCols || piece.squares[i].y < 0 || isSquarePlacedAt(piece.squares[i].x, piece.squares[i].y)) {
+			return false;
+		}
+	}
+	return true;
+};
 
 isSquarePlacedAt = function(x, y) {
 	var i;
@@ -277,8 +299,9 @@ randomPieceType = function() {
  * Action functions
  */
 
+// returns the spawned piece if there is room for it to spawn, null otherwise
 spawnPiece = function(forceType) {
-	var x, y, type, rotation;
+	var x, y, type, rotation, testPiece;
 	
 	x = Math.round(numCols / 2) - 2;
 	y = numRows - 3;
@@ -286,65 +309,72 @@ spawnPiece = function(forceType) {
 	rotation = 0;
 	
 	// TODO: Accurately position spawned piece. Maybe do this inside makePiece? Currently just a rough approximation.
-	currentPiece = makePiece(x, y, type, rotation);
+
+	testPiece = makePiece(x, y, type, rotation);
+	if(isValidPiece(testPiece)) {
+		return testPiece;
+	} else {
+		return null;
+	}
 };
 
 // returns whether or not the piece has been placed.
-lowerPiece = function() {
+lowerPiece = function(piece) {
 	var i;
 
-	// see if any square below the current piece is occupied or is the ground
-	for(i = 0; i < currentPiece.squares.length; i++) {
-		if(currentPiece.squares[i].y === 0 || isSquarePlacedAt(currentPiece.squares[i].x, currentPiece.squares[i].y - 1)) {
+	// see if any square below the piece is occupied or is the ground
+	// TODO: Might be able to use isValidPiece w/a test piece? need to test for and return whether the piece was placed so idk.
+	for(i = 0; i < piece.squares.length; i++) {
+		if(piece.squares[i].y === 0 || isSquarePlacedAt(piece.squares[i].x, piece.squares[i].y - 1)) {
 			return true;
 		}
 	}
 
 	// square can be lowered
-	// TODO: Ideally we would just call currentPiece.y-- and code elsewhere will figure out that the squares need to be lowered.
-	for(i = 0; i < currentPiece.squares.length; i++) {
-		currentPiece.squares[i].y--;
+	// TODO: Ideally we would just call piece.y-- and code elsewhere will figure out that the squares need to be lowered.
+	for(i = 0; i < piece.squares.length; i++) {
+		piece.squares[i].y--;
 	}
-	currentPiece.y--;
+	piece.y--;
 
 	return false;
 };
 
-rotatePiece = function(rotationAmount) {
+rotatePiece = function(piece, rotationAmount) {
 	var i, newRotation, testPiece;
 
 	// we want the rotation to be (0, number of possible rotations for this piece] but since we allow negative rotation we need to add the number of possible rotations before
 	// applying the modulus because -3 % 10 === -3 when we want -3 % 10 to be 7.
-	newRotation = (rotations[currentPiece.type].length + (currentPiece.rotation + rotationAmount)) % rotations[currentPiece.type].length;
+	newRotation = (rotations[piece.type].length + (piece.rotation + rotationAmount)) % rotations[piece.type].length;
 
-	// see if the destination rotation is occupied or out of bounds
-	testPiece = makePiece(currentPiece.x, currentPiece.y, currentPiece.type, newRotation);
-	for(i = 0; i < testPiece.squares.length; i++) {
-		if(testPiece.squares[i].x < 0 || testPiece.squares[i].x >= numCols || testPiece.squares[i].y < 0 || isSquarePlacedAt(testPiece.squares[i].x, testPiece.squares[i].y)) {
-			return;
+	// in place
+	testPiece = makePiece(piece.x, piece.y, piece.type, newRotation);
+	if(isValidPiece(testPiece)) {
+		return testPiece;
+	}
+
+	// I piece cannot kick in TGM2
+	if(piece.type !== "I") {
+		// 1 square right
+		testPiece = makePiece(piece.x + 1, piece.y, piece.type, newRotation);
+		if(isValidPiece(testPiece)) {
+			return testPiece;
+		}
+
+		// 1 square left
+		testPiece = makePiece(piece.x - 1, piece.y, piece.type, newRotation);
+		if(isValidPiece(testPiece)) {
+			return testPiece;
 		}
 	}
 
-	// square can be rotated
-	currentPiece = testPiece;
+	return piece;
 };
 
-shiftPiece = function(xDelta) {
-	var i;
-
-	// see if any square next to the current piece is occupied or is the wall
-	for(i = 0; i < currentPiece.squares.length; i++) {
-		if(currentPiece.squares[i].x + xDelta < 0 || currentPiece.squares[i].x + xDelta >= numCols || isSquarePlacedAt(currentPiece.squares[i].x + xDelta, currentPiece.squares[i].y)) {
-			return;
-		}
-	}
-
-	// square can be shifted
-	// TODO: Ideally we would just call currentPiece.x += xDelta; and code elsewhere will figure out that the squares need to be shifted.
-	for(i = 0; i < currentPiece.squares.length; i++) {
-		currentPiece.squares[i].x += xDelta;
-	}
-	currentPiece.x += xDelta;
+shiftPiece = function(piece, xDelta) {
+	var testPiece;
+	testPiece = makePiece(piece.x + xDelta, piece.y, piece.type, piece.rotation);
+	return isValidPiece(testPiece) ? testPiece : piece;
 };
 
 clearLines = function() {
@@ -383,8 +413,17 @@ clearLines = function() {
 	}
 };
 
+restart = function() {
+	placedSquares = [];
+	currentPiece = spawnPiece();
+};
+
 update = function() {
 	var placed;
+
+	if(keys.framesPressed(keys.R) === 1 || currentPiece === null) {
+		restart();
+	}
 
 	placed = false;
 
@@ -394,36 +433,36 @@ update = function() {
 
 	// only triggering when pressed for just 1 frame is equivalent to being a keydown event.
 	if(keys.framesPressed(keys.UP) === 1) {
-		rotatePiece(1);
+		currentPiece = rotatePiece(currentPiece, 1);
 	}
 	if(keys.framesPressed(keys.X) === 1) {
-		rotatePiece(-1);
+		currentPiece = rotatePiece(currentPiece, -1);
 	}
 
 	// If the key has been held for a while, trigger additional movement every frame the key continues to be held calledDelayed Auto Shift (DAS).
 	if(keys.framesPressed(keys.RIGHT) === 1 || keys.framesPressed(keys.RIGHT) >= autoRepeatDelay) {
-		shiftPiece(1);
+		currentPiece = shiftPiece(currentPiece, 1);
 	}
 	if(keys.framesPressed(keys.LEFT) === 1 || keys.framesPressed(keys.LEFT) >= autoRepeatDelay) {
-		shiftPiece(-1);
+		currentPiece = shiftPiece(currentPiece, -1);
 	}
 
 	// we want to be able to hold down to lower the piece quickly so we don't test for just === 1
 	// kind of like DAS but we don't want to wait.
 	if(keys.framesPressed(keys.DOWN) > 0) {
-		placed = lowerPiece();
+		placed = lowerPiece(currentPiece);
 	}
 
 	if(keys.framesPressed(keys.SPACE) === 1) {
-		while(placed === false) {
-			placed = lowerPiece();
+		while(!(placed = lowerPiece(currentPiece))) {
+			// lol
 		}
 	}
 
 	// debug tools
 	pieceTypes.forEach(function(type) {
 		if(keys.framesPressed(keys[type])) {
-			spawnPiece(type);
+			currentPiece = spawnPiece(type);
 		}
 	});
 
@@ -432,7 +471,7 @@ update = function() {
 	// TODO: Better gravity code.
 	if(placed === false) {
 		if(framesSinceGravity === framesPerGravity) {
-			placed = lowerPiece();
+			placed = lowerPiece(currentPiece);
 			framesSinceGravity = 0;
 		} else {
 			framesSinceGravity++;
@@ -445,12 +484,12 @@ update = function() {
 		// TODO: maybe this can work better somehow
 		placedSquares = placedSquares.concat(currentPiece.squares);
 		clearLines();
-		spawnPiece();
+		currentPiece = spawnPiece();
 	}
 };
 
 render = function() {
-	var i;
+	var i, ghostPiece;
 	context.clearRect(0 , 0, canvas.width, canvas.height);
 
 	for(i = 0; i < placedSquares.length; i++) {
@@ -458,9 +497,22 @@ render = function() {
 		context.fillRect(placedSquares[i].x * cellWidth, canvas.height - cellHeight - placedSquares[i].y * cellHeight, cellWidth, cellHeight);
 	}
 
-	for(i = 0; i < currentPiece.squares.length; i++) {
-		context.fillStyle = currentPiece.squares[i].color;
-		context.fillRect(currentPiece.squares[i].x * cellWidth, canvas.height - cellHeight - currentPiece.squares[i].y * cellHeight, cellWidth, cellHeight);
+	if(currentPiece !== null) {
+		if(showGhostPiece) {
+			ghostPiece = makePiece(currentPiece.x, currentPiece.y, currentPiece.type, currentPiece.rotation);
+			while(!lowerPiece(ghostPiece)) {
+				// lol
+			}
+			for(i = 0; i < ghostPiece.squares.length; i++) {
+				context.fillStyle = ghostColors[ghostPiece.type];
+				context.fillRect(ghostPiece.squares[i].x * cellWidth, canvas.height - cellHeight - ghostPiece.squares[i].y * cellHeight, cellWidth, cellHeight);
+			}
+		}
+		
+		for(i = 0; i < currentPiece.squares.length; i++) {
+			context.fillStyle = currentPiece.squares[i].color;
+			context.fillRect(currentPiece.squares[i].x * cellWidth, canvas.height - cellHeight - currentPiece.squares[i].y * cellHeight, cellWidth, cellHeight);
+		}
 	}
 };
 
@@ -476,7 +528,7 @@ tick = function() {
 };
 
 init = function() {
-	spawnPiece();
+	currentPiece = spawnPiece();
 
 	canvas = document.createElement("canvas");
 	context = canvas.getContext("2d");
