@@ -80,6 +80,8 @@ makePiece = function(x, y, type, rotation) {
 gravity = 4; // cells per frame * 256
 totalAREframes = 30; // frames between lock and spawn of next piece
 remainingAREframes = 0;
+lockDelay = 30;
+currentLockDelay = 0;
 autoRepeatDelay = 14;
 currentPiece = null;
 ghostPiece = null;
@@ -210,6 +212,8 @@ keys = {
 	_pressed: {},
 
 	// keyCodes
+	K_EQUALS: 187,
+	// TODO: prepend K_ to all codes
 	SPACE: 32,
 
 	LEFT:  37,
@@ -426,8 +430,31 @@ restart = function() {
 update = function() {
 	var pieceLocked;
 
+	// debug tools
+	// spawn a specific piece
+	pieceTypes.forEach(function(type) {
+		if(keys.framesPressed(keys[type]) === 1) {
+			currentPiece = spawnPiece(type);
+		}
+	});
+	// set gravity from 0 to 20G
+	for(var i = 0; i <= 9; i++) {
+		if(keys.framesPressed(keys["K_" + i]) === 1) {
+			gravity = (i === 0) ? 0 : Math.pow(4, i); // 4^0 != 0 for 0G
+		}
+	}
+	// toggle lock delay
+	if(keys.framesPressed(keys.K_EQUALS) === 1) {
+		lockDelay = lockDelay ? 0 : 30;
+	}
+	// manual reset
+	if(keys.framesPressed(keys.R) === 1) {
+		restart();
+	}
+
+	// wait to spawn the next piece
 	if(remainingAREframes > 0) {
-		if(--remainingAREframes == 0) {
+		if(--remainingAREframes === 0) {
 			currentPiece = spawnPiece();
 			// Initial Rotation System
 			if(keys.framesPressed(keys.UP) > 0) {
@@ -440,6 +467,9 @@ update = function() {
 			if(!isValidPiece(currentPiece)) {
 				restart();
 			}
+		} else {
+			return; // we can't control anything so nothing to do this frame?
+			// TODO: find a better/safer way to do this (and handle currentPiece === null)
 		}
 	}
 
@@ -473,24 +503,14 @@ update = function() {
 		while(shiftPiece(currentPiece, 0, -1)) {}
 	}
 
-	// debug tools
-	// spawn a specific piece
-	pieceTypes.forEach(function(type) {
-		if(keys.framesPressed(keys[type]) === 1) {
-			currentPiece = spawnPiece(type);
-		}
-	});
-	// set gravity from 0 to 20G
-	for(var i = 0; i <= 9; i++) {
-		if(keys.framesPressed(keys["K_" + i]) === 1) {
-			gravity = (i == 0) ? 0 : Math.pow(4, i); // 4^0 != 0 for 0G
-		}
+	// piece locking
+	if(shiftPiece(currentPiece, 0, -1)) {
+		shiftPiece(currentPiece, 0, 1);
+		currentLockDelay = 0; // still hovering, reset lock delay
+	} else if(++currentLockDelay === lockDelay) {
+			currentLockDelay = 0;
+			pieceLocked = true;
 	}
-	// manual reset
-	if(keys.framesPressed(keys.R) === 1) {
-		restart();
-	}
-
 	if(pieceLocked) {
 		// add the current piece to the board
 		placedSquares = placedSquares.concat(currentPiece.squares);
