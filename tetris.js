@@ -472,6 +472,21 @@ update = function() {
 		}
 	}
 
+	if(pieceLocked) {
+		// add the current piece to the board
+		placedSquares = placedSquares.concat(currentPiece.squares);
+		clearLines();
+		currentPiece = spawnPiece();
+		pieceLocked = false;
+
+		// Initial Rotation System
+		if(keys.framesPressed(keys.UP) > 0) {
+			currentPiece = rotatePiece(currentPiece, 1);
+		}
+		if(keys.framesPressed(keys.X) > 0) {
+			currentPiece = rotatePiece(currentPiece, -1);
+		}
+	}
 
 	// gravity
 	if(!pieceLocked) {
@@ -482,14 +497,6 @@ update = function() {
 		}
 	}
 
-	if(pieceLocked) {
-		// need to add currentPiece's squares to placedSquares somewhere around this time. Doesn't make sense to do it in clearLines(),
-		// but afterwards would be too late since clearLines() expects placedSquares to have everything on the board in it at that point.
-		// TODO: maybe this can work better somehow
-		placedSquares = placedSquares.concat(currentPiece.squares);
-		clearLines();
-		currentPiece = spawnPiece();
-	}
 };
 
 render = function() {
