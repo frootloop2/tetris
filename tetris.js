@@ -78,6 +78,8 @@ makePiece = function(x, y, type, rotation) {
  * TODO: Probably should group these nicely or at least move them out of the global namespace.
  */
 gravity = 4; // cells per frame * 256
+totalAREframes = 30; // frames between lock and spawn of next piece
+remainingAREframes = 0;
 autoRepeatDelay = 14;
 currentPiece = null;
 ghostPiece = null;
@@ -424,8 +426,21 @@ restart = function() {
 update = function() {
 	var pieceLocked;
 
-	if(keys.framesPressed(keys.R) === 1 || currentPiece === null) {
-		restart();
+	if(remainingAREframes > 0) {
+		if(--remainingAREframes == 0) {
+			currentPiece = spawnPiece();
+			// Initial Rotation System
+			if(keys.framesPressed(keys.UP) > 0) {
+				currentPiece = rotatePiece(currentPiece, 1);
+			}
+			if(keys.framesPressed(keys.X) > 0) {
+				currentPiece = rotatePiece(currentPiece, -1);
+			}
+			// you can IRS to avoid losing
+			if(!isValidPiece(currentPiece)) {
+				restart();
+			}
+		}
 	}
 
 	// get input
@@ -471,21 +486,17 @@ update = function() {
 			gravity = (i == 0) ? 0 : Math.pow(4, i); // 4^0 != 0 for 0G
 		}
 	}
+	// manual reset
+	if(keys.framesPressed(keys.R) === 1) {
+		restart();
+	}
 
 	if(pieceLocked) {
 		// add the current piece to the board
 		placedSquares = placedSquares.concat(currentPiece.squares);
 		clearLines();
-		currentPiece = spawnPiece();
-		pieceLocked = false;
-
-		// Initial Rotation System
-		if(keys.framesPressed(keys.UP) > 0) {
-			currentPiece = rotatePiece(currentPiece, 1);
-		}
-		if(keys.framesPressed(keys.X) > 0) {
-			currentPiece = rotatePiece(currentPiece, -1);
-		}
+		remainingAREframes = totalAREframes;
+		currentPiece = null;
 	}
 
 	// gravity
