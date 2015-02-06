@@ -37,6 +37,7 @@ Piece = {
 	rotation: 0,
 	x: 0,
 	y: 0,
+	dy: 0, // quantize effects of gravity
 
 	translate: function(x, y) {
 		this.x += x || 0;
@@ -76,8 +77,7 @@ makePiece = function(x, y, type, rotation) {
  * Globals
  * TODO: Probably should group these nicely or at least move them out of the global namespace.
  */
-framesPerGravity = 15;
-framesSinceGravity = 0;
+gravity = 4; // cells per frame * 256
 autoRepeatDelay = 14;
 currentPiece = null;
 ghostPiece = null;
@@ -225,6 +225,17 @@ keys = {
 
 	R:     82,
 	X:     88,
+
+	K_0:   48,
+	K_1:   49,
+	K_2:   50,
+	K_3:   51,
+	K_4:   52,
+	K_5:   53,
+	K_6:   54,
+	K_7:   55,
+	K_8:   56,
+	K_9:   57,
 
 	keyDown: function(ev) {
 		// OS generally has it's own repeating key stuff which will retrigger keyDown events.This means a keyDown event can be triggered even though
@@ -448,21 +459,26 @@ update = function() {
 	}
 
 	// debug tools
+	// spawn a specific piece
 	pieceTypes.forEach(function(type) {
-		if(keys.framesPressed(keys[type])) {
+		if(keys.framesPressed(keys[type]) === 1) {
 			currentPiece = spawnPiece(type);
 		}
 	});
+	// set gravity from 0 to 20G
+	for(var i = 0; i <= 9; i++) {
+		if(keys.framesPressed(keys["K_" + i]) === 1) {
+			gravity = (i == 0) ? 0 : Math.pow(4, i); // 4^0 != 0 for 0G
+		}
+	}
 
 
 	// gravity
-	// TODO: Better gravity code.
 	if(!pieceLocked) {
-		if(framesSinceGravity === framesPerGravity) {
-			pieceLocked = !shiftPiece(currentPiece, 0, -1);
-			framesSinceGravity = 0;
-		} else {
-			framesSinceGravity++;
+		currentPiece.dy -= gravity / 256;
+		while(currentPiece.dy <= -1) {
+			currentPiece.dy++
+			shiftPiece(currentPiece, 0, -1);
 		}
 	}
 
