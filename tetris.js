@@ -36,7 +36,18 @@ Piece = {
 	type: "X",
 	rotation: 0,
 	x: 0,
-	y: 0
+	y: 0,
+	dy: 0, // quantize effects of gravity
+
+	translate: function(x, y) {
+		this.x += x || 0;
+		this.y += y || 0;
+		for(var i = 0; i < this.squares.length; i++) {
+			this.squares[i].x += x || 0;
+			this.squares[i].y += y || 0;
+		}
+		return this;
+	},
 };
 
 makePiece = function(x, y, type, rotation) {
@@ -66,12 +77,15 @@ makePiece = function(x, y, type, rotation) {
  * Globals
  * TODO: Probably should group these nicely or at least move them out of the global namespace.
  */
-framesPerGravity = 15;
-framesSinceGravity = 0;
+gravity = 4; // cells per frame * 256
+totalAREframes = 30; // frames between lock and spawn of next piece
+remainingAREframes = 0;
+lockDelay = 30;
+currentLockDelay = 0;
 autoRepeatDelay = 14;
 currentPiece = null;
 ghostPiece = null;
-showGhostPiece = false;
+showGhostPiece = true;
 placedSquares = [];
 numRows = 20;
 numCols = 10;
@@ -198,6 +212,8 @@ keys = {
 	_pressed: {},
 
 	// keyCodes
+	K_EQUALS: 187,
+	// TODO: prepend K_ to all codes
 	SPACE: 32,
 
 	LEFT:  37,
@@ -215,6 +231,17 @@ keys = {
 
 	R:     82,
 	X:     88,
+
+	K_0:   48,
+	K_1:   49,
+	K_2:   50,
+	K_3:   51,
+	K_4:   52,
+	K_5:   53,
+	K_6:   54,
+	K_7:   55,
+	K_8:   56,
+	K_9:   57,
 
 	keyDown: function(ev) {
 		// OS generally has it's own repeating key stuff which will retrigger keyDown events.This means a keyDown event can be triggered even though
@@ -318,28 +345,6 @@ spawnPiece = function(forceType) {
 	}
 };
 
-// returns whether or not the piece has been placed.
-lowerPiece = function(piece) {
-	var i;
-
-	// see if any square below the piece is occupied or is the ground
-	// TODO: Might be able to use isValidPiece w/a test piece? need to test for and return whether the piece was placed so idk.
-	for(i = 0; i < piece.squares.length; i++) {
-		if(piece.squares[i].y === 0 || isSquarePlacedAt(piece.squares[i].x, piece.squares[i].y - 1)) {
-			return true;
-		}
-	}
-
-	// square can be lowered
-	// TODO: Ideally we would just call piece.y-- and code elsewhere will figure out that the squares need to be lowered.
-	for(i = 0; i < piece.squares.length; i++) {
-		piece.squares[i].y--;
-	}
-	piece.y--;
-
-	return false;
-};
-
 rotatePiece = function(piece, rotationAmount) {
 	var i, newRotation, testPiece;
 
@@ -371,10 +376,14 @@ rotatePiece = function(piece, rotationAmount) {
 	return piece;
 };
 
-shiftPiece = function(piece, xDelta) {
-	var testPiece;
-	testPiece = makePiece(piece.x + xDelta, piece.y, piece.type, piece.rotation);
-	return isValidPiece(testPiece) ? testPiece : piece;
+// shift and return the piece if possible, or return false
+shiftPiece = function(piece, dx, dy) {
+	piece.translate(dx, dy);
+	if(isValidPiece(piece)) {
+		return piece;
+	}
+	piece.translate(-dx, -dy);
+	return false;
 };
 
 clearLines = function() {
@@ -419,13 +428,50 @@ restart = function() {
 };
 
 update = function() {
-	var placed;
+	var pieceLocked;
 
-	if(keys.framesPressed(keys.R) === 1 || currentPiece === null) {
+	// debug tools
+	// spawn a specific piece
+	pieceTypes.forEach(function(type) {
+		if(keys.framesPressed(keys[type]) === 1) {
+			currentPiece = spawnPiece(type);
+		}
+	});
+	// set gravity from 0 to 20G
+	for(var i = 0; i <= 9; i++) {
+		if(keys.framesPressed(keys["K_" + i]) === 1) {
+			gravity = (i === 0) ? 0 : Math.pow(4, i); // 4^0 != 0 for 0G
+		}
+	}
+	// toggle lock delay
+	if(keys.framesPressed(keys.K_EQUALS) === 1) {
+		lockDelay = lockDelay ? 0 : 30;
+	}
+	// manual reset
+	if(keys.framesPressed(keys.R) === 1) {
 		restart();
 	}
 
-	placed = false;
+	// wait to spawn the next piece
+	if(remainingAREframes > 0) {
+		if(--remainingAREframes === 0) {
+			currentPiece = spawnPiece();
+			// Initial Rotation System
+			if(keys.framesPressed(keys.UP) > 0) {
+				currentPiece = rotatePiece(currentPiece, 1);
+			}
+			if(keys.framesPressed(keys.X) > 0) {
+				currentPiece = rotatePiece(currentPiece, -1);
+			}
+			// you can IRS to avoid losing
+			if(!isValidPiece(currentPiece)) {
+				restart();
+			}
+		} else {
+			return; // we can't control anything so nothing to do this frame?
+			// TODO: find a better/safer way to do this (and handle currentPiece === null)
+		}
+	}
 
 	// get input
 	// TODO: need to determine the appropriate order for applying inputs.
@@ -441,51 +487,47 @@ update = function() {
 
 	// If the key has been held for a while, trigger additional movement every frame the key continues to be held calledDelayed Auto Shift (DAS).
 	if(keys.framesPressed(keys.RIGHT) === 1 || keys.framesPressed(keys.RIGHT) >= autoRepeatDelay) {
-		currentPiece = shiftPiece(currentPiece, 1);
+		shiftPiece(currentPiece, 1);
 	}
 	if(keys.framesPressed(keys.LEFT) === 1 || keys.framesPressed(keys.LEFT) >= autoRepeatDelay) {
-		currentPiece = shiftPiece(currentPiece, -1);
+		shiftPiece(currentPiece, -1);
 	}
 
 	// we want to be able to hold down to lower the piece quickly so we don't test for just === 1
 	// kind of like DAS but we don't want to wait.
 	if(keys.framesPressed(keys.DOWN) > 0) {
-		placed = lowerPiece(currentPiece);
+		pieceLocked = !shiftPiece(currentPiece, 0, -1);
 	}
 
 	if(keys.framesPressed(keys.SPACE) === 1) {
-		while(!(placed = lowerPiece(currentPiece))) {
-			// lol
-		}
+		while(shiftPiece(currentPiece, 0, -1)) {}
 	}
 
-	// debug tools
-	pieceTypes.forEach(function(type) {
-		if(keys.framesPressed(keys[type])) {
-			currentPiece = spawnPiece(type);
-		}
-	});
-
-
-	// gravity
-	// TODO: Better gravity code.
-	if(placed === false) {
-		if(framesSinceGravity === framesPerGravity) {
-			placed = lowerPiece(currentPiece);
-			framesSinceGravity = 0;
-		} else {
-			framesSinceGravity++;
-		}
+	// piece locking
+	if(shiftPiece(currentPiece, 0, -1)) {
+		shiftPiece(currentPiece, 0, 1);
+		currentLockDelay = 0; // still hovering, reset lock delay
+	} else if(++currentLockDelay === lockDelay) {
+			currentLockDelay = 0;
+			pieceLocked = true;
 	}
-
-	if(placed === true) {
-		// need to add currentPiece's squares to placedSquares somewhere around this time. Doesn't make sense to do it in clearLines(),
-		// but afterwards would be too late since clearLines() expects placedSquares to have everything on the board in it at that point.
-		// TODO: maybe this can work better somehow
+	if(pieceLocked) {
+		// add the current piece to the board
 		placedSquares = placedSquares.concat(currentPiece.squares);
 		clearLines();
-		currentPiece = spawnPiece();
+		remainingAREframes = totalAREframes;
+		currentPiece = null;
 	}
+
+	// gravity
+	if(!pieceLocked) {
+		currentPiece.dy -= gravity / 256;
+		while(currentPiece.dy <= -1) {
+			currentPiece.dy++
+			shiftPiece(currentPiece, 0, -1);
+		}
+	}
+
 };
 
 render = function() {
@@ -500,9 +542,7 @@ render = function() {
 	if(currentPiece !== null) {
 		if(showGhostPiece) {
 			ghostPiece = makePiece(currentPiece.x, currentPiece.y, currentPiece.type, currentPiece.rotation);
-			while(!lowerPiece(ghostPiece)) {
-				// lol
-			}
+			while(shiftPiece(ghostPiece, 0, -1)) {}
 			for(i = 0; i < ghostPiece.squares.length; i++) {
 				context.fillStyle = ghostColors[ghostPiece.type];
 				context.fillRect(ghostPiece.squares[i].x * cellWidth, canvas.height - cellHeight - ghostPiece.squares[i].y * cellHeight, cellWidth, cellHeight);
