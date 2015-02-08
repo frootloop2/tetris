@@ -47,7 +47,7 @@ Piece = {
 			this.squares[i].y += y || 0;
 		}
 		return this;
-	},
+	}
 };
 
 makePiece = function(x, y, type, rotation) {
@@ -73,23 +73,54 @@ makePiece = function(x, y, type, rotation) {
 	return newPiece;
 };
 
+Board = {
+	gravity: 256 / 60, // cells per frame * 256
+	remainingAREframes: 0,
+	currentLockDelay: 0,
+	currentPiece: null,
+	holdPiece: null,
+	holdAllowed: true,
+	ghostPiece: null,
+	placedSquares: [],
+	renderXOffset: 0,
+
+	// TODO: maybe make into some input map object
+	shiftLeftKey: null,
+	shiftRightKey: null,
+	rotateCWKey: null,
+	rotateCCWKey: null,
+	softDropKey: null,
+	hardDropKey: null,
+	holdKey: null
+
+	// TODO: move all the board specific functions in here so we don't have to pass it around everywhere.
+};
+
+makeBoard = function(renderXOffset) {
+	var newBoard;
+	
+	newBoard = Object.create(Board);
+
+	// Otherwise all boards share the same Piece.squares array. We want each piece to have it's own array of squares.
+	newBoard.placedSquares = [];
+	newBoard.renderXOffset = renderXOffset;
+	return newBoard;
+};
+
 /*
  * Globals
  * TODO: Probably should group these nicely or at least move them out of the global namespace.
  */
-gravity = 4; // cells per frame * 256
-totalAREframes = 30; // frames between lock and spawn of next piece
-remainingAREframes = 0;
-lockDelay = 30;
-currentLockDelay = 0;
-autoRepeatDelay = 14;
-currentPiece = null;
-ghostPiece = null;
+
+debug = false;
+boards = [];
 showGhostPiece = true;
-placedSquares = [];
+lockDelay = 30;
+totalAREframes = 30; // frames between lock and spawn of next piece
+autoRepeatDelay = 14;
 numRows = 20;
 numCols = 10;
-fps = 30;
+fps = 60;
 canvas = null;
 context = null;
 cellWidth = -1;
@@ -212,7 +243,6 @@ keys = {
 	_pressed: {},
 
 	// keyCodes
-	K_EQUALS: 187,
 	// TODO: prepend K_ to all codes
 	SPACE: 32,
 
@@ -220,6 +250,11 @@ keys = {
 	UP:    38,
 	RIGHT: 39,
 	DOWN:  40,
+
+	SHIFT: 16,
+
+	R:     82,
+	X:     88,
 	
 	I:     73,
 	J:     74,
@@ -229,8 +264,7 @@ keys = {
 	S:     83,
 	Z:     90,
 
-	R:     82,
-	X:     88,
+	K_EQUALS: 187,
 
 	K_0:   48,
 	K_1:   49,
@@ -276,19 +310,19 @@ window.addEventListener("keyup", keys.keyUp);
  * Game Logic functions
  */
 
-isValidPiece = function(piece) {
+isValidPiece = function(piece, board) {
 	for(i = 0; i < piece.squares.length; i++) {
-		if(piece.squares[i].x < 0 || piece.squares[i].x >= numCols || piece.squares[i].y < 0 || isSquarePlacedAt(piece.squares[i].x, piece.squares[i].y)) {
+		if(piece.squares[i].x < 0 || piece.squares[i].x >= numCols || piece.squares[i].y < 0 || isSquarePlacedAt(board, piece.squares[i].x, piece.squares[i].y)) {
 			return false;
 		}
 	}
 	return true;
 };
 
-isSquarePlacedAt = function(x, y) {
+isSquarePlacedAt = function(board, x, y) {
 	var i;
-	for(i = 0; i < placedSquares.length; i++) {
-		if(placedSquares[i].x === x && placedSquares[i].y === y) {
+	for(i = 0; i < board.placedSquares.length; i++) {
+		if(board.placedSquares[i].x === x && board.placedSquares[i].y === y) {
 			return true;
 		}
 	}
@@ -327,25 +361,28 @@ randomPieceType = function() {
  */
 
 // returns the spawned piece if there is room for it to spawn, null otherwise
-spawnPiece = function(forceType) {
+spawnPiece = function(board, forceType) {
 	var x, y, type, rotation, testPiece;
 	
 	x = Math.round(numCols / 2) - 2;
 	y = numRows - 3;
+
+	// don't add forceType to history because it's used for debugging and swapping a hold piece back in
+	// neither of which we want to count towards the history.
 	type = forceType || randomPieceType();
 	rotation = 0;
 	
 	// TODO: Accurately position spawned piece. Maybe do this inside makePiece? Currently just a rough approximation.
 
 	testPiece = makePiece(x, y, type, rotation);
-	if(isValidPiece(testPiece)) {
+	if(isValidPiece(testPiece, board)) {
 		return testPiece;
 	} else {
 		return null;
 	}
 };
 
-rotatePiece = function(piece, rotationAmount) {
+rotatePiece = function(piece, rotationAmount, board) {
 	var i, newRotation, testPiece;
 
 	// we want the rotation to be (0, number of possible rotations for this piece] but since we allow negative rotation we need to add the number of possible rotations before
@@ -354,7 +391,7 @@ rotatePiece = function(piece, rotationAmount) {
 
 	// in place
 	testPiece = makePiece(piece.x, piece.y, piece.type, newRotation);
-	if(isValidPiece(testPiece)) {
+	if(isValidPiece(testPiece, board)) {
 		return testPiece;
 	}
 
@@ -362,13 +399,13 @@ rotatePiece = function(piece, rotationAmount) {
 	if(piece.type !== "I") {
 		// 1 square right
 		testPiece = makePiece(piece.x + 1, piece.y, piece.type, newRotation);
-		if(isValidPiece(testPiece)) {
+		if(isValidPiece(testPiece, board)) {
 			return testPiece;
 		}
 
 		// 1 square left
 		testPiece = makePiece(piece.x - 1, piece.y, piece.type, newRotation);
-		if(isValidPiece(testPiece)) {
+		if(isValidPiece(testPiece, board)) {
 			return testPiece;
 		}
 	}
@@ -377,22 +414,22 @@ rotatePiece = function(piece, rotationAmount) {
 };
 
 // shift and return the piece if possible, or return false
-shiftPiece = function(piece, dx, dy) {
+shiftPiece = function(piece, dx, dy, board) {
 	piece.translate(dx, dy);
-	if(isValidPiece(piece)) {
+	if(isValidPiece(piece, board)) {
 		return piece;
 	}
 	piece.translate(-dx, -dy);
 	return false;
 };
 
-clearLines = function() {
+clearLines = function(board) {
 	var i, rowNum, colNum, emptyFound;
 
 	for(rowNum = 0; rowNum < numRows; rowNum++) {
 		emptyFound = false;
 		for(colNum = 0; colNum < numCols; colNum++) {
-			if(isSquarePlacedAt(colNum, rowNum) === false) {
+			if(isSquarePlacedAt(board, colNum, rowNum) === false) {
 				// square not yet cleared
 				emptyFound = true;
 				break;
@@ -406,14 +443,14 @@ clearLines = function() {
 		}
 
 		// remove squares at the cleared line
-		placedSquares = placedSquares.filter(function(square) {
+		board.placedSquares = board.placedSquares.filter(function(square) {
 			return square.y !== rowNum;
 		});
 		// move squares from above the cleared line down
-		for(i = 0; i < placedSquares.length; i++) {
-			if(placedSquares[i].y > rowNum) {
+		for(i = 0; i < board.placedSquares.length; i++) {
+			if(board.placedSquares[i].y > rowNum) {
 				// needs to be else if otherwise 
-				placedSquares[i].y--;
+				board.placedSquares[i].y--;
 			}
 		}
 		// need to check this i value again because the row above it got pushed into this one
@@ -422,138 +459,169 @@ clearLines = function() {
 	}
 };
 
-restart = function() {
-	placedSquares = [];
-	currentPiece = spawnPiece();
+restart = function(board) {
+	board.placedSquares = [];
+	board.currentPiece = spawnPiece(board);
 };
 
 update = function() {
-	var pieceLocked;
+	var i, pieceLocked, tmpPiece;
 
-	// debug tools
-	// spawn a specific piece
-	pieceTypes.forEach(function(type) {
-		if(keys.framesPressed(keys[type]) === 1) {
-			currentPiece = spawnPiece(type);
+	// TODO: probably just have a board.update() function that this function calls for each board.
+	boards.forEach(function(board) {	
+		pieceLocked = false;
+		// debug tools
+		if(debug === true) {
+			// spawn a specific piece
+			pieceTypes.forEach(function(type) {
+				if(keys.framesPressed(keys[type]) === 1) {
+					board.currentPiece = spawnPiece(board, type);
+				}
+			});
+			// set gravity from 0 to 20G
+			for(var i = 0; i <= 9; i++) {
+				if(keys.framesPressed(keys["K_" + i]) === 1) {
+					board.gravity = (i === 0) ? 0 : Math.pow(4, i); // 4^0 != 0 for 0G
+				}
+			}
+			// toggle lock delay
+			if(keys.framesPressed(keys.K_EQUALS) === 1) {
+				lockDelay = lockDelay ? 0 : 30;
+			}
+			// manual reset
+			if(keys.framesPressed(keys.R) === 1) {
+				restart(board);
+			}
+		}
+
+		// wait to spawn the next piece
+		if(board.remainingAREframes > 0) {
+			if(--board.remainingAREframes === 0) {
+				board.holdAllowed = true;
+				board.currentPiece = spawnPiece(board);
+				// Initial Rotation System
+				if(keys.framesPressed(board.rotateCWKey) > 0) {
+					board.currentPiece = rotatePiece(board.currentPiece, 1, board);
+				}
+				if(keys.framesPressed(board.rotateCCWKey) > 0) {
+					board.currentPiece = rotatePiece(board.currentPiece, -1, board);
+				}
+				// you can IRS to avoid losing
+				if(!isValidPiece(board.currentPiece, board)) {
+					restart(board);
+				}
+			} else {
+				return; // we can't control anything so nothing to do this frame?
+				// TODO: find a better/safer way to do this (and handle currentPiece === null)
+			}
+		}
+
+		// get input
+		// TODO: need to determine the appropriate order for applying inputs.
+		// TODO: pick more ideal keys for controls.
+
+		// only triggering when pressed for just 1 frame is equivalent to being a keydown event.
+		if(keys.framesPressed(board.holdKey) === 1) {
+			if(board.holdAllowed === true) {
+				if(board.holdPiece === null) {
+					board.holdPiece = board.currentPiece;
+					board.currentPiece = spawnPiece(board);
+				} else {
+					tmpPiece = board.currentPiece;
+					// don't just set currentPiece to holdPiece because holdPiece might have fallen. I guess we could just store the type but w/e for now
+					// unless something comes up.
+					board.currentPiece = spawnPiece(board, board.holdPiece.type);
+					board.holdPiece = tmpPiece;
+				}
+			}
+			// can't re-hold until a piece is locked.
+			board.holdAllowed = false;
+		}
+
+		if(keys.framesPressed(board.rotateCWKey) === 1) {
+			board.currentPiece = rotatePiece(board.currentPiece, 1, board);
+		}
+		if(keys.framesPressed(board.rotateCCWKey) === 1) {
+			board.currentPiece = rotatePiece(board.currentPiece, -1, board);
+		}
+
+		// If the key has been held for a while, trigger additional movement every frame the key continues to be held calledDelayed Auto Shift (DAS).
+		if(keys.framesPressed(board.shiftRightKey) === 1 || keys.framesPressed(board.shiftRightKey) >= autoRepeatDelay) {
+			shiftPiece(board.currentPiece, 1, 0, board);
+		}
+		if(keys.framesPressed(board.shiftLeftKey) === 1 || keys.framesPressed(board.shiftLeftKey) >= autoRepeatDelay) {
+			shiftPiece(board.currentPiece, -1, 0, board);
+		}
+
+		// we want to be able to hold down to lower the piece quickly so we don't test for just === 1
+		// kind of like DAS but we don't want to wait.
+		if(keys.framesPressed(board.softDropKey) > 0) {
+			pieceLocked = !shiftPiece(board.currentPiece, 0, -1, board);
+		}
+
+		if(keys.framesPressed(board.hardDropKey) === 1) {
+			while(shiftPiece(board.currentPiece, 0, -1, board)) {}
+		}
+
+		// piece locking
+		if(shiftPiece(board.currentPiece, 0, -1, board)) {
+			shiftPiece(board.currentPiece, 0, 1, board);
+			board.currentLockDelay = 0; // still hovering, reset lock delay
+		} else if(++board.currentLockDelay === lockDelay) {
+				board.currentLockDelay = 0;
+				pieceLocked = true;
+		}
+		if(pieceLocked) {
+			// add the current piece to the board
+			board.placedSquares = board.placedSquares.concat(board.currentPiece.squares);
+			clearLines(board);
+			board.remainingAREframes = totalAREframes;
+			board.currentPiece = null;
+		}
+
+		// gravity
+		if(!pieceLocked) {
+			board.currentPiece.dy -= board.gravity / 256;
+			while(board.currentPiece.dy <= -1) {
+				board.currentPiece.dy++
+				shiftPiece(board.currentPiece, 0, -1, board);
+			}
 		}
 	});
-	// set gravity from 0 to 20G
-	for(var i = 0; i <= 9; i++) {
-		if(keys.framesPressed(keys["K_" + i]) === 1) {
-			gravity = (i === 0) ? 0 : Math.pow(4, i); // 4^0 != 0 for 0G
-		}
-	}
-	// toggle lock delay
-	if(keys.framesPressed(keys.K_EQUALS) === 1) {
-		lockDelay = lockDelay ? 0 : 30;
-	}
-	// manual reset
-	if(keys.framesPressed(keys.R) === 1) {
-		restart();
-	}
-
-	// wait to spawn the next piece
-	if(remainingAREframes > 0) {
-		if(--remainingAREframes === 0) {
-			currentPiece = spawnPiece();
-			// Initial Rotation System
-			if(keys.framesPressed(keys.UP) > 0) {
-				currentPiece = rotatePiece(currentPiece, 1);
-			}
-			if(keys.framesPressed(keys.X) > 0) {
-				currentPiece = rotatePiece(currentPiece, -1);
-			}
-			// you can IRS to avoid losing
-			if(!isValidPiece(currentPiece)) {
-				restart();
-			}
-		} else {
-			return; // we can't control anything so nothing to do this frame?
-			// TODO: find a better/safer way to do this (and handle currentPiece === null)
-		}
-	}
-
-	// get input
-	// TODO: need to determine the appropriate order for applying inputs.
-	// TODO: pick more ideal keys for controls.
-
-	// only triggering when pressed for just 1 frame is equivalent to being a keydown event.
-	if(keys.framesPressed(keys.UP) === 1) {
-		currentPiece = rotatePiece(currentPiece, 1);
-	}
-	if(keys.framesPressed(keys.X) === 1) {
-		currentPiece = rotatePiece(currentPiece, -1);
-	}
-
-	// If the key has been held for a while, trigger additional movement every frame the key continues to be held calledDelayed Auto Shift (DAS).
-	if(keys.framesPressed(keys.RIGHT) === 1 || keys.framesPressed(keys.RIGHT) >= autoRepeatDelay) {
-		shiftPiece(currentPiece, 1);
-	}
-	if(keys.framesPressed(keys.LEFT) === 1 || keys.framesPressed(keys.LEFT) >= autoRepeatDelay) {
-		shiftPiece(currentPiece, -1);
-	}
-
-	// we want to be able to hold down to lower the piece quickly so we don't test for just === 1
-	// kind of like DAS but we don't want to wait.
-	if(keys.framesPressed(keys.DOWN) > 0) {
-		pieceLocked = !shiftPiece(currentPiece, 0, -1);
-	}
-
-	if(keys.framesPressed(keys.SPACE) === 1) {
-		while(shiftPiece(currentPiece, 0, -1)) {}
-	}
-
-	// piece locking
-	if(shiftPiece(currentPiece, 0, -1)) {
-		shiftPiece(currentPiece, 0, 1);
-		currentLockDelay = 0; // still hovering, reset lock delay
-	} else if(++currentLockDelay === lockDelay) {
-			currentLockDelay = 0;
-			pieceLocked = true;
-	}
-	if(pieceLocked) {
-		// add the current piece to the board
-		placedSquares = placedSquares.concat(currentPiece.squares);
-		clearLines();
-		remainingAREframes = totalAREframes;
-		currentPiece = null;
-	}
-
-	// gravity
-	if(!pieceLocked) {
-		currentPiece.dy -= gravity / 256;
-		while(currentPiece.dy <= -1) {
-			currentPiece.dy++
-			shiftPiece(currentPiece, 0, -1);
-		}
-	}
-
 };
 
 render = function() {
 	var i, ghostPiece;
 	context.clearRect(0 , 0, canvas.width, canvas.height);
 
-	for(i = 0; i < placedSquares.length; i++) {
-		context.fillStyle = placedSquares[i].color;
-		context.fillRect(placedSquares[i].x * cellWidth, canvas.height - cellHeight - placedSquares[i].y * cellHeight, cellWidth, cellHeight);
-	}
+	boards.forEach(function(board) {
+		for(i = 0; i < board.placedSquares.length; i++) {
+			context.fillStyle = board.placedSquares[i].color;
+			context.fillRect(board.renderXOffset + (board.placedSquares[i].x * cellWidth), canvas.height - cellHeight - board.placedSquares[i].y * cellHeight, cellWidth, cellHeight);
+		}
 
-	if(currentPiece !== null) {
-		if(showGhostPiece) {
-			ghostPiece = makePiece(currentPiece.x, currentPiece.y, currentPiece.type, currentPiece.rotation);
-			while(shiftPiece(ghostPiece, 0, -1)) {}
-			for(i = 0; i < ghostPiece.squares.length; i++) {
-				context.fillStyle = ghostColors[ghostPiece.type];
-				context.fillRect(ghostPiece.squares[i].x * cellWidth, canvas.height - cellHeight - ghostPiece.squares[i].y * cellHeight, cellWidth, cellHeight);
+		if(board.currentPiece !== null) {
+			if(showGhostPiece) {
+				ghostPiece = makePiece(board.currentPiece.x, board.currentPiece.y, board.currentPiece.type, board.currentPiece.rotation);
+				while(shiftPiece(ghostPiece, 0, -1, board)) {}
+				for(i = 0; i < ghostPiece.squares.length; i++) {
+					context.fillStyle = ghostColors[ghostPiece.type];
+					context.fillRect(board.renderXOffset + (ghostPiece.squares[i].x * cellWidth), canvas.height - cellHeight - ghostPiece.squares[i].y * cellHeight, cellWidth, cellHeight);
+				}
+			}
+			
+			for(i = 0; i < board.currentPiece.squares.length; i++) {
+				context.fillStyle = board.currentPiece.squares[i].color;
+				context.fillRect(board.renderXOffset + (board.currentPiece.squares[i].x * cellWidth), canvas.height - cellHeight - board.currentPiece.squares[i].y * cellHeight, cellWidth, cellHeight);
 			}
 		}
-		
-		for(i = 0; i < currentPiece.squares.length; i++) {
-			context.fillStyle = currentPiece.squares[i].color;
-			context.fillRect(currentPiece.squares[i].x * cellWidth, canvas.height - cellHeight - currentPiece.squares[i].y * cellHeight, cellWidth, cellHeight);
+
+		if(board.holdPiece !== null) {
+			context.font = "24px serif";
+			context.fillStyle = "#FFFFFF";
+	  		context.fillText("Hold Piece: " + board.holdPiece.type, board.renderXOffset, 24);
 		}
-	}
+	});
 };
 
 /*
@@ -568,17 +636,29 @@ tick = function() {
 };
 
 init = function() {
-	currentPiece = spawnPiece();
-
 	canvas = document.createElement("canvas");
 	context = canvas.getContext("2d");
-	canvas.width = 480;
+	canvas.width = 960;
 	canvas.height = 960;
 	canvas.style.backgroundColor = "#000000";
 	document.body.appendChild(canvas);
 
-	cellWidth = canvas.width / numCols;
+	cellWidth = (canvas.width / 2) / numCols;
 	cellHeight = canvas.height / numRows;
+
+	boards.push(makeBoard(0));
+	boards.push(makeBoard(canvas.width / 2));
+	boards[0].shiftLeftKey = keys.LEFT;
+	boards[0].shiftRightKey = keys.RIGHT;
+	boards[0].rotateCWKey = keys.UP;
+	boards[0].rotateCCWKey = keys.X;
+	boards[0].softDropKey = keys.DOWN;
+	boards[0].hardDropKey = keys.SPACE;
+	boards[0].holdKey = keys.SHIFT;
+	
+	boards.forEach(function(board) {
+		board.currentPiece = spawnPiece(board);	
+	});
 
 	setInterval(tick, 1000 / fps);
 };
