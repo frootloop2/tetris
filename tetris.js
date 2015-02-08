@@ -647,7 +647,6 @@ init = function() {
 	cellHeight = canvas.height / numRows;
 
 	boards.push(makeBoard(0));
-	boards.push(makeBoard(canvas.width / 2));
 	boards[0].shiftLeftKey = keys.LEFT;
 	boards[0].shiftRightKey = keys.RIGHT;
 	boards[0].rotateCWKey = keys.UP;
@@ -656,6 +655,8 @@ init = function() {
 	boards[0].hardDropKey = keys.SPACE;
 	boards[0].holdKey = keys.SHIFT;
 	
+	boards.push(makeBoard(canvas.width / 2));
+
 	boards.forEach(function(board) {
 		board.currentPiece = spawnPiece(board);	
 	});
